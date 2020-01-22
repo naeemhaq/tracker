@@ -16,8 +16,8 @@
             <form method="POST" action="/verify-mobile">
                 <small>A verification token has been sent to {{ phone }}</small>
                 <div class="field" style="margin-top: 35px;">
-                  <input class="auth-field" type="tel" name="mobile_input" placeholder="123-456-7890"
-                         pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}" required
+                  <input class="auth-field" type="tel" name="verify_code" placeholder="123456"
+                         pattern="[0-9]{6}" required
                   >
                 </div>
 

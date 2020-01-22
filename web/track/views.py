@@ -3,6 +3,7 @@ import os
 
 from datetime import datetime
 from http import HTTPStatus
+from random import randint
 
 from .config import *
 from .input_validators import *
@@ -20,7 +21,7 @@ from track.cache import cache
 from notifications_python_client.notifications import NotificationsAPIClient
 from track import api_config
 
-from itsdangerous import URLSafeTimedSerializer
+from itsdangerous import URLSafeTimedSerializer, TimedJSONWebSignatureSerializer
 
 
 notifications_client = NotificationsAPIClient(
@@ -452,43 +453,64 @@ def register(app):
         prefix = request.path[1:3]
         return render_template(generate_path(prefix, 'password-changed'))
 
-    @app.route("/en/verify-account", methods=['GET', 'POST'])
-    @app.route("/fr/verify-account", methods=['GET', 'POST'])
+    @app.route("/en/verify-account/mobile", methods=['GET', 'POST'])
+    @app.route("/fr/verify-account/mobile", methods=['GET', 'POST'])
     def verify_account():
         prefix = request.path[1:3]
         if request.method == 'GET':
-            return render_template(generate_path(prefix, "verify-account"))
+            title = 'Verify Mobile Number'
+            return render_template(generate_path(prefix, "verify-account"), title=title)
         else:
-            phone = request.form.get('mobile_input')
+            temp_phone = cleanse_input(request.form.get('mobile_input'))
+            phone = ''
+            for number in temp_phone:
+                if number != '-':
+                    phone += number
+
+            rand_verify_code = randint(100000, 999999)
             # Create Token and send text  notification
-            # response = notifications_client.send_sms_notification(
-            #     phone_number='+1' + phone,
-            #     template_id='Some ID',
-            #     personalisation={
-            #         'token':token
-            #     }
-            # )
+            response = notifications_client.send_sms_notification(
+                phone_number='+1' + phone,
+                template_id='9d2346e4-7e24-4b09-a412-5e0a43a7577c',
+                personalisation={
+                    'verify_code': rand_verify_code
+                }
+            )
 
             # Hide Mobile Number
-            # i = 0
-            # hidden_phone = ''
-            # for char in phone:
-            #     if char == '-':
-            #         hidden_phone += char
-            #     else:
-            #         if i < 6:
-            #             hidden_phone += '*'
-            #         else:
-            #             hidden_phone += char
-            #         i += 1
-            return redirect('/' + prefix + '/verify-account/mobile')
+            i = 0
+            hidden_phone = ''
+            for char in phone:
+                if char == '-':
+                    hidden_phone += char
+                else:
+                    if i < 6:
+                        hidden_phone += '*'
+                    else:
+                        hidden_phone += char
+                    i += 1
 
-    @app.route("/en/verify-account/mobile", methods=['GET', 'POST'])
-    @app.route("/fr/verify-account/mobile", methods=['GET', 'POST'])
-    def verify_account_mobile():
+            serializer = TimedJSONWebSignatureSerializer(api_config.super_secret_key, expires_in=1800)
+            token = serializer.dumps({'verify_code': rand_verify_code,
+                                      'phone': hidden_phone},
+                                     salt=api_config.super_secret_salt)
+
+            return redirect(url_for(prefix + '_verify_account_mobile', token=token))
+
+    @app.route("/en/verify-account/mobile/<token>", endpoint='en_verify_account_mobile', methods=['GET', 'POST'])
+    @app.route("/fr/verify-account/mobile/<token>", endpoint='fr_verify_account_mobile', methods=['GET', 'POST'])
+    def verify_account_mobile(token):
         prefix = request.path[1:3]
-        phone = 'placeholder: ***-***-3333'
-        return render_template(generate_path(prefix, "verify-mobile"), phone=phone)
+        serializer = TimedJSONWebSignatureSerializer(api_config.super_secret_key)
+        data = serializer.loads(token, salt=api_config.super_secret_salt)
+
+        if request.method == 'GET':
+            return render_template(generate_path(prefix, "verify-mobile"), phone=data['phone'])
+        else:
+            verify_phone_code = cleanse_input(request.form.get('verify_code'))
+
+            # if verify_phone_code == data.verify_code:
+            #     connection.update_user_authentication( ,True)
 
     def send_pass_reset(user, prefix, template_id):
         password_reset_serial = URLSafeTimedSerializer(api_config.super_secret_key)
